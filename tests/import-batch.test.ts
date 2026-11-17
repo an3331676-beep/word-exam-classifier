@@ -35,6 +35,9 @@ describe('importBatch', () => {
       { text: 'An article about spring.' },
       { text: '21. What season is it?' },
       { text: 'A. Spring B. Summer C. Autumn D. Winter' },
+      { text: '参考答案' },
+      { text: 'Passage A' },
+      { text: '21. A，解析：文章写的是春天。' },
     ]);
 
     const result = await importBatch([upload('阅读卷.docx', reading)]);
@@ -44,5 +47,11 @@ describe('importBatch', () => {
     expect(result.questions[0].groupId).toBe(result.groups[0].id);
     expect(result.questions[0].outputNumber).toBe(1);
     expect(result.numberingByType.reading).toEqual([{ questionId: result.questions[0].id, value: 1 }]);
+    expect(result.answers[0]).toMatchObject({
+      originalNumber: '21',
+      groupLabel: 'Passage A',
+      questionId: result.questions[0].id,
+    });
+    expect(result.questions[0].answerId).toBe(result.answers[0].id);
   });
 });

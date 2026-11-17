@@ -1,3 +1,4 @@
+import { associateAnswers, parseAnswerBlocks } from './answers';
 import { classifyQuestion } from './classify';
 import { groupEnglishQuestions } from './group-english';
 import type { BatchResult, ReviewItem, UploadLike } from './model';
@@ -9,6 +10,7 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
   const exams: BatchResult['exams'] = [];
   const questions: BatchResult['questions'] = [];
   const groups: BatchResult['groups'] = [];
+  const rawAnswers: BatchResult['answers'] = [];
   const reviewItems: ReviewItem[] = [];
   const fileErrors: BatchResult['fileErrors'] = [];
 
@@ -25,6 +27,7 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
       const exam = await readDocx(new Uint8Array(buffer), { id: sourceId, fileName: file.name });
       exams.push(exam);
       const segmented = segmentExam(exam);
+      rawAnswers.push(...parseAnswerBlocks(exam.source.id, segmented.answerBlocks));
       const examQuestions: BatchResult['questions'] = [];
       reviewItems.push(...segmented.reviewItems);
       for (const draft of segmented.questions) {
@@ -61,11 +64,13 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
   }
 
   const numbered = renumberAllTypes(questions);
+  const associated = associateAnswers(rawAnswers, numbered.questions, groups);
+  reviewItems.push(...associated.reviewItems);
   return {
     exams,
-    questions: numbered.questions,
+    questions: associated.questions,
     groups,
-    answers: [],
+    answers: associated.answers,
     numberingByType: numbered.numberingByType,
     reviewItems,
     fileErrors,

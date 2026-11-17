@@ -10,7 +10,7 @@ function normalized(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-function passageLabel(text: string): string | undefined {
+export function detectPassageLabel(text: string): string | undefined {
   const value = normalized(text);
   if (value.length > 40) return undefined;
   if (/^(?:Passage|Text)\s+[A-Z0-9一二三四五六七八九十]+(?:\s*[:：.-])?$/i.test(value)) return value;
@@ -48,7 +48,7 @@ function groupType(
   const markers: PassageMarker[] = exam.blocks
     .filter((block) => block.index > sectionStart && block.index <= questions.at(-1)!.startBlock)
     .flatMap((block) => {
-      const label = passageLabel(block.text);
+      const label = detectPassageLabel(block.text);
       return label ? [{ index: block.index, label }] : [];
     });
 
