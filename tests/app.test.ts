@@ -47,6 +47,34 @@ const result: BatchResult = {
   fileErrors: [],
 };
 
+const resultWithReadingAndCloze: BatchResult = {
+  exams: [{
+    source: { id: 'paper', fileName: '英语卷.docx' },
+    blocks: [
+      { index: 0, kind: 'paragraph', text: 'Passage A', xml: '', relationshipIds: [], hasFormula: false, issues: [] },
+      { index: 1, kind: 'paragraph', text: 'Tom lives in Beijing.', xml: '', relationshipIds: [], hasFormula: false, issues: [] },
+      { index: 2, kind: 'paragraph', text: '21. Where does Tom live?', xml: '', relationshipIds: [], hasFormula: false, issues: [] },
+      { index: 3, kind: 'paragraph', text: '完形填空', xml: '', relationshipIds: [], hasFormula: false, issues: [] },
+      { index: 4, kind: 'paragraph', text: 'I have (1) apple.', xml: '', relationshipIds: [], hasFormula: false, issues: [] },
+      { index: 5, kind: 'paragraph', text: '1. A. a B. an C. the D. /', xml: '', relationshipIds: [], hasFormula: false, issues: [] },
+    ],
+    resources: new Map(),
+    issues: [],
+  }],
+  questions: [
+    { id: 'reading-q', sourceId: 'paper', originalNumber: '21', startBlock: 2, endBlock: 3, issues: [], type: 'reading', reason: '栏目识别', groupId: 'reading-g', outputNumber: 1 },
+    { id: 'cloze-q', sourceId: 'paper', originalNumber: '1', startBlock: 5, endBlock: 6, issues: [], type: 'cloze', reason: '栏目识别', groupId: 'cloze-g', outputNumber: 1 },
+  ],
+  groups: [
+    { id: 'reading-g', sourceId: 'paper', type: 'reading', originalLabel: 'Passage A', materialStartBlock: 0, materialEndBlock: 2, questionIds: ['reading-q'], issues: [] },
+    { id: 'cloze-g', sourceId: 'paper', type: 'cloze', originalLabel: '完形 1', materialStartBlock: 3, materialEndBlock: 5, questionIds: ['cloze-q'], issues: [] },
+  ],
+  answers: [],
+  numberingByType: {},
+  reviewItems: [],
+  fileErrors: [],
+};
+
 describe('createExamApp', () => {
   test('imports multiple Word files, displays traceable questions and supports manual type changes', async () => {
     const root = document.createElement('main');
@@ -69,5 +97,29 @@ describe('createExamApp', () => {
     typeSelect.dispatchEvent(new Event('change'));
     expect(root.querySelector('[data-count="fill"]')?.textContent).toContain('1');
     expect(root.textContent).toContain('人工调整');
+  });
+
+  test('selects one target type and switches parsed groups without importing again', async () => {
+    const root = document.createElement('main');
+    const importDocuments = vi.fn().mockResolvedValue(resultWithReadingAndCloze);
+    createExamApp(root, { importDocuments });
+
+    const reading = root.querySelector<HTMLInputElement>('input[value="reading"]')!;
+    reading.click();
+    expect(reading.checked).toBe(true);
+    expect(root.textContent).toContain('提取英语阅读理解');
+
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { value: [{ name: '英语卷.docx' }], configurable: true });
+    input.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(importDocuments).toHaveBeenCalledOnce();
+    expect(root.textContent).toContain('阅读 1');
+    expect(root.textContent).toContain('Tom lives in Beijing.');
+    root.querySelector<HTMLInputElement>('input[value="cloze"]')!.click();
+    expect(importDocuments).toHaveBeenCalledOnce();
+    expect(root.textContent).toContain('完形 1');
+    expect(root.textContent).not.toContain('Tom lives in Beijing.');
   });
 });

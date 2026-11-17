@@ -1,17 +1,22 @@
 import { mergeWithNext, promoteReviewRange, splitQuestion, updateQuestionType } from './exams/editor';
 import { exportCategoryDocx, type ExportedDocx } from './exams/export-docx';
 import { importBatch } from './exams/import-batch';
+import { renumberAllTypes } from './exams/renumber';
 import type {
+  AnswerItem,
   BatchResult,
   ClassifiedQuestion,
   DocumentResource,
+  ExportQuestionType,
   ParsedExam,
+  QuestionGroup,
   QuestionType,
   UploadLike,
 } from './exams/model';
+import { renderGroupView } from './ui/group-view';
+import { renderTypeSelector, selectableTypes } from './ui/type-selector';
 
-type FilterType = QuestionType | 'all';
-type ExportType = Exclude<QuestionType, 'unknown'>;
+type ExportType = ExportQuestionType;
 
 interface AppServices {
   importDocuments(files: UploadLike[]): Promise<BatchResult>;
@@ -19,6 +24,8 @@ interface AppServices {
     type: ExportType,
     questions: ClassifiedQuestion[],
     exams: ParsedExam[],
+    groups?: QuestionGroup[],
+    answers?: AnswerItem[],
   ): Promise<ExportedDocx>;
   download(blob: Blob, fileName: string): void;
   print(): void;
@@ -70,7 +77,7 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
   const services = { ...defaultServices, ...overrides };
   let result: BatchResult | undefined;
   let questions: ClassifiedQuestion[] = [];
-  let activeFilter: FilterType = 'all';
+  let selectedType: ExportType = 'choice';
   let busy = false;
   let status = '';
   let exportMessage = '';
@@ -138,11 +145,12 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
     <section class="hero-card">
       <div class="eyebrow"><span class="eyebrow-dot"></span> 本地文档整理</div>
       <h1>把多份 Word 试卷<br /><span>归成清楚的题型合集</span></h1>
-      <p class="hero-copy">一次添加多份可编辑的 .docx。系统先识别题目边界，再按选择题、填空题和解答题整理。所有处理都在当前浏览器中完成。</p>
+      <p class="hero-copy">一次添加多份可编辑的 .docx。选择一种目标题型，系统会识别文章与小题边界、连续编号，并把答案解析整理到文末。所有处理都在当前浏览器中完成。</p>
+      ${renderTypeSelector(selectedType)}
       <label class="upload-zone ${busy ? 'is-busy' : ''}" for="exam-files">
         <input id="exam-files" type="file" accept=".docx" multiple ${busy ? 'disabled' : ''} />
         <span class="upload-icon" aria-hidden="true">＋</span>
-        <span class="upload-copy"><strong>${busy ? '正在分析文档…' : '添加 Word 试卷'}</strong><small>选择多个 .docx，或拖到这里</small></span>
+        <span class="upload-copy"><strong>${busy ? '正在分析文档…' : `添加 Word 试卷，提取${TYPE_LABELS[selectedType]}`}</strong><small>选择多个 .docx，或拖到这里</small></span>
         <span class="upload-action">选择文件</span>
       </label>
       ${status ? `<p class="status-line" role="status">${escapeHtml(status)}</p>` : ''}
@@ -163,19 +171,20 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
       <section class="workspace-head">
         <div>
           <div class="eyebrow"><span class="eyebrow-dot"></span> 已读取 ${result?.exams.length ?? 0} 份试卷</div>
-          <h1>分类核对台</h1>
-          <p>先看待核对项，再导出题型汇总。</p>
+          <h1>${TYPE_LABELS[selectedType]}提取结果</h1>
+          <p>文章和小题已按上传顺序整理，可随时切换目标题型。</p>
         </div>
         <label class="compact-upload" for="exam-files">
           <input id="exam-files" type="file" accept=".docx" multiple ${busy ? 'disabled' : ''} />
           <span>＋ 重新选择试卷</span>
         </label>
       </section>
+      <section class="result-type-selector">${renderTypeSelector(selectedType, true)}</section>
       <section class="metric-grid" aria-label="题型统计">
-        ${(['choice', 'fill', 'solution', 'unknown'] as QuestionType[])
+        ${selectableTypes
           .map(
-            (type) => `<button class="metric-card metric-${type}" data-filter="${type}" data-count="${type}">
-              <span>${TYPE_LABELS[type]}</span><strong>${currentCounts[type]}</strong>
+            (item) => `<button class="metric-card metric-${item.value}${selectedType === item.value ? ' is-selected' : ''}" data-select-type="${item.value}" data-count="${item.value}">
+              <span>${item.label}</span><strong>${currentCounts[item.value]}</strong>
             </button>`,
           )
           .join('')}
@@ -183,23 +192,6 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
       </section>
     `;
   };
-
-  const renderFilters = () => `
-    <nav class="filter-row" aria-label="题目筛选">
-      ${([
-        ['all', '全部题目'],
-        ['choice', '选择题'],
-        ['fill', '填空题'],
-        ['solution', '解答题'],
-        ['unknown', '待定'],
-      ] as Array<[FilterType, string]>)
-        .map(
-          ([value, label]) =>
-            `<button data-filter="${value}" class="${activeFilter === value ? 'is-active' : ''}">${label}</button>`,
-        )
-        .join('')}
-    </nav>
-  `;
 
   const renderQuestionCard = (question: ClassifiedQuestion, globalIndex: number): string => {
     const exam = examById(question.sourceId);
@@ -214,6 +206,7 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
         <header class="question-meta">
           <div>
             <span class="type-chip">${TYPE_LABELS[question.type]}</span>
+            ${question.outputNumber ? `<span class="number-chip">第 ${question.outputNumber} 题</span>` : ''}
             <span class="source-chip">${escapeHtml(exam?.source.fileName ?? question.sourceId)}</span>
             <span class="source-chip">原题 ${escapeHtml(question.originalNumber)}</span>
           </div>
@@ -223,7 +216,7 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
         <footer class="question-tools">
           <label>题型
             <select data-action="type" data-id="${escapeHtml(question.id)}">
-              ${(['choice', 'fill', 'solution', 'unknown'] as QuestionType[])
+              ${(['choice', 'fill', 'reading', 'cloze', 'unknown'] as QuestionType[])
                 .map((type) => `<option value="${type}" ${question.type === type ? 'selected' : ''}>${TYPE_LABELS[type]}</option>`)
                 .join('')}
             </select>
@@ -239,6 +232,59 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
         </footer>
       </article>
     `;
+  };
+
+  const renderGroupMaterial = (group: QuestionGroup): string => {
+    const exam = examById(group.sourceId);
+    if (!exam) return '<p class="empty-copy">文章来源文档不可用</p>';
+    const blocks: string[] = [];
+    for (let index = group.materialStartBlock; index < group.materialEndBlock; index += 1) {
+      blocks.push(renderBlock(exam, index));
+    }
+    return blocks.join('');
+  };
+
+  const renderSelectedQuestionList = (): string => {
+    const selectedQuestions = questions.filter((question) => question.type === selectedType);
+    if (selectedType !== 'reading' && selectedType !== 'cloze') {
+      return selectedQuestions
+        .map((question) => renderQuestionCard(
+          question,
+          questions.findIndex((candidate) => candidate.id === question.id),
+        ))
+        .join('');
+    }
+
+    const questionById = new Map(selectedQuestions.map((question) => [question.id, question]));
+    const rendered = new Set<string>();
+    const grouped = (result?.groups ?? [])
+      .filter((group) => group.type === selectedType)
+      .map((group, groupIndex) => {
+        const members = group.questionIds
+          .map((id) => questionById.get(id))
+          .filter((question): question is ClassifiedQuestion => Boolean(question));
+        for (const member of members) rendered.add(member.id);
+        if (!members.length) return '';
+        return renderGroupView({
+          group,
+          groupIndex,
+          questions: members,
+          renderMaterial: () => renderGroupMaterial(group),
+          renderQuestion: (question) => renderQuestionCard(
+            question,
+            questions.findIndex((candidate) => candidate.id === question.id),
+          ),
+        });
+      })
+      .join('');
+    const ungrouped = selectedQuestions
+      .filter((question) => !rendered.has(question.id))
+      .map((question) => renderQuestionCard(
+        question,
+        questions.findIndex((candidate) => candidate.id === question.id),
+      ))
+      .join('');
+    return grouped + ungrouped;
   };
 
   const renderReviewItems = () => {
@@ -270,28 +316,56 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
 
   const renderExportPanel = () => `
     <aside class="export-panel">
-      <div><span class="eyebrow">输出汇总</span><h2>核对后再生成</h2><p>Word 保留题目内容与来源。PDF 使用浏览器打印功能。</p></div>
-      ${(['choice', 'fill', 'solution'] as ExportType[])
-        .map(
-          (type) => `<div class="export-row"><span><b>${TYPE_LABELS[type]}</b><small>${counts()[type]} 题</small></span><button data-export="${type}" ${counts()[type] ? '' : 'disabled'}>导出 Word</button><button class="ghost-button" data-print="${type}" ${counts()[type] ? '' : 'disabled'}>打印 PDF</button></div>`,
-        )
-        .join('')}
+      <div><span class="eyebrow">输出汇总</span><h2>导出${TYPE_LABELS[selectedType]}</h2><p>文章只保留一次，小题从 1 连续编号；已匹配的答案解析统一置于文末。</p></div>
+      <div class="answer-match-summary"><span>已匹配答案</span><b>${questions.filter((question) => question.type === selectedType && question.answerId).length} / ${counts()[selectedType]}</b></div>
+      <div class="export-row"><span><b>${TYPE_LABELS[selectedType]}</b><small>${counts()[selectedType]} 题</small></span><button data-export="${selectedType}" ${counts()[selectedType] ? '' : 'disabled'}>导出 Word</button><button class="ghost-button" data-print="${selectedType}" ${counts()[selectedType] ? '' : 'disabled'}>打印 PDF</button></div>
       ${exportMessage ? `<p class="export-message" role="status">${escapeHtml(exportMessage)}</p>` : ''}
     </aside>
   `;
 
   const renderPrintSheet = () => {
     const printable = questions.filter((question) => question.type === printType);
+    const printableById = new Map(printable.map((question) => [question.id, question]));
+    const answerByQuestionId = new Map(
+      (result?.answers ?? [])
+        .filter((answer) => answer.questionId && printableById.has(answer.questionId))
+        .map((answer) => [answer.questionId!, answer]),
+    );
+    const printQuestion = (question: ClassifiedQuestion, fallback: number) => {
+      const exam = examById(question.sourceId);
+      return `<article class="print-question"><h2>${question.outputNumber ?? fallback}. <span>${escapeHtml(
+        exam?.source.fileName ?? question.sourceId,
+      )} · 原题 ${escapeHtml(question.originalNumber)}</span></h2>${renderQuestionBody(question, true)}</article>`;
+    };
+    const groups = (result?.groups ?? []).filter((group) => group.type === printType);
+    const groupedBody = (printType === 'reading' || printType === 'cloze') && groups.length
+      ? groups.map((group, groupIndex) => {
+          const exam = examById(group.sourceId);
+          const material = exam
+            ? Array.from(
+                { length: group.materialEndBlock - group.materialStartBlock },
+                (_, index) => renderBlock(exam, group.materialStartBlock + index, true),
+              ).join('')
+            : '';
+          const members = group.questionIds
+            .map((id) => printableById.get(id))
+            .filter((question): question is ClassifiedQuestion => Boolean(question));
+          return `<section class="print-passage"><h2>${printType === 'reading' ? '阅读' : '完形'} ${groupIndex + 1}</h2>${material}${members.map((question, index) => printQuestion(question, index + 1)).join('')}</section>`;
+        }).join('')
+      : printable.map((question, index) => printQuestion(question, index + 1)).join('');
+    const answerBody = printable
+      .filter((question) => answerByQuestionId.has(question.id))
+      .map((question, index) => {
+        const answer = answerByQuestionId.get(question.id)!;
+        const text = answer.originalNumber
+          ? answer.text.replace(new RegExp(`^${answer.originalNumber}\\s*[.、)）]\\s*`), '')
+          : answer.text;
+        return `<p><b>${question.outputNumber ?? index + 1}.</b> ${escapeHtml(text)}</p>`;
+      }).join('');
     return `<section class="print-sheet">
       <h1>${TYPE_LABELS[printType]}汇总</h1>
-      ${printable
-        .map((question, index) => {
-          const exam = examById(question.sourceId);
-          return `<article class="print-question"><h2>${index + 1}. <span>${escapeHtml(
-            exam?.source.fileName ?? question.sourceId,
-          )} · 原题 ${escapeHtml(question.originalNumber)}</span></h2>${renderQuestionBody(question, true)}</article>`;
-        })
-        .join('')}
+      ${groupedBody}
+      ${answerBody ? `<section class="print-answers"><h2>答案与解析</h2>${answerBody}</section>` : ''}
     </section>`;
   };
 
@@ -313,16 +387,31 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
     });
   };
 
-  const attachInteractions = () => {
-    root.querySelectorAll<HTMLElement>('[data-filter]').forEach((button) => {
-      button.addEventListener('click', () => {
-        activeFilter = button.dataset.filter as FilterType;
-        render();
-      });
+  const selectType = (type: ExportType) => {
+    selectedType = type;
+    printType = type;
+    exportMessage = '';
+    render();
+  };
+
+  const attachTypeSelection = () => {
+    root.querySelectorAll<HTMLInputElement>('input[name="target-type"]').forEach((input) => {
+      input.addEventListener('click', () => selectType(input.value as ExportType));
     });
+    root.querySelectorAll<HTMLButtonElement>('[data-select-type]').forEach((button) => {
+      button.addEventListener('click', () => selectType(button.dataset.selectType as ExportType));
+    });
+  };
+
+  const attachInteractions = () => {
+    attachTypeSelection();
     root.querySelectorAll<HTMLSelectElement>('[data-action="type"]').forEach((select) => {
       select.addEventListener('change', () => {
-        questions = updateQuestionType(questions, select.dataset.id ?? '', select.value as QuestionType);
+        const nextType = select.value as QuestionType;
+        questions = renumberAllTypes(
+          updateQuestionType(questions, select.dataset.id ?? '', nextType),
+        ).questions;
+        if (nextType !== 'unknown' && nextType !== 'solution') selectedType = nextType;
         render();
       });
     });
@@ -330,13 +419,13 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
       button.addEventListener('click', () => {
         const id = button.dataset.id ?? '';
         const point = root.querySelector<HTMLSelectElement>(`[data-action="split-point"][data-id="${CSS.escape(id)}"]`);
-        questions = splitQuestion(questions, id, Number(point?.value));
+        questions = renumberAllTypes(splitQuestion(questions, id, Number(point?.value))).questions;
         render();
       });
     });
     root.querySelectorAll<HTMLButtonElement>('[data-action="merge"]').forEach((button) => {
       button.addEventListener('click', () => {
-        questions = mergeWithNext(questions, button.dataset.id ?? '');
+        questions = renumberAllTypes(mergeWithNext(questions, button.dataset.id ?? '')).questions;
         render();
       });
     });
@@ -346,7 +435,7 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
         if (!item || !result) return;
         const nextQuestions = promoteReviewRange(questions, item);
         if (nextQuestions !== questions) {
-          questions = nextQuestions;
+          questions = renumberAllTypes(nextQuestions).questions;
           result.reviewItems = result.reviewItems.filter((candidate) => candidate.id !== item.id);
         }
         render();
@@ -372,22 +461,20 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
     if (!result) {
       root.innerHTML = `<header class="brand-row"><a class="brand" href="#"><span>卷</span>试卷归集台</a><small>WORD EXAM WORKBENCH</small></header><div class="landing-grid">${renderInitial()}</div>`;
       attachFileInput();
+      attachTypeSelection();
       return;
     }
-    const visibleQuestions = questions.filter((question) => activeFilter === 'all' || question.type === activeFilter);
+    const visibleQuestions = questions.filter((question) => question.type === selectedType);
     root.innerHTML = `
       <header class="brand-row"><a class="brand" href="#"><span>卷</span>试卷归集台</a><small>WORD EXAM WORKBENCH</small></header>
       ${renderSummary()}
       ${renderErrors()}
       <div class="workspace-grid">
         <section class="question-column">
-          ${renderFilters()}
           ${renderReviewItems()}
           <div class="question-list">${
             visibleQuestions.length
-              ? visibleQuestions
-                  .map((question) => renderQuestionCard(question, questions.findIndex((candidate) => candidate.id === question.id)))
-                  .join('')
+              ? renderSelectedQuestionList()
               : '<div class="empty-state"><strong>当前分类还没有题目</strong><p>可以切换筛选，或把待核对片段加入题目。</p></div>'
           }</div>
         </section>
@@ -409,7 +496,6 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
       releaseObjectUrls();
       result = await services.importDocuments(files);
       questions = result.questions;
-      activeFilter = 'all';
       status = `已读取 ${result.exams.length} 份试卷，识别 ${questions.length} 道题。`;
     } catch (error) {
       status = error instanceof Error ? error.message : '读取失败';
@@ -424,7 +510,7 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
     exportMessage = `正在生成${TYPE_LABELS[type]}汇总…`;
     render();
     try {
-      const exported = await services.exportCategory(type, questions, result.exams);
+      const exported = await services.exportCategory(type, questions, result.exams, result.groups, result.answers);
       const buffer = exported.bytes.buffer.slice(
         exported.bytes.byteOffset,
         exported.bytes.byteOffset + exported.bytes.byteLength,
