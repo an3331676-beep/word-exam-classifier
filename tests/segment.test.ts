@@ -77,4 +77,37 @@ describe('segmentExam', () => {
     expect(result.questions[0]).toMatchObject({ startBlock: 1, endBlock: 3, sectionType: 'solution' });
     expect(result.questions).toHaveLength(2);
   });
+
+  test.each([
+    ['四、阅读理解（共两篇）', 'reading'],
+    ['Reading Comprehension', 'reading'],
+    ['五、完形填空', 'cloze'],
+    ['Cloze Test (15 points)', 'cloze'],
+  ] as const)('recognizes English section %s', (title, sectionType) => {
+    const result = segmentExam(examWith([
+      block(0, title),
+      block(1, '1. Which statement is correct?'),
+    ]));
+    expect(result.questions[0].sectionType).toBe(sectionType);
+  });
+
+  test('retains the independent answer section after finishing questions', () => {
+    const result = segmentExam(examWith([
+      block(0, '一、选择题'),
+      block(1, '1. 题干'),
+      block(2, '参考答案'),
+      block(3, '1. A，解析：根据原文可知。'),
+    ]));
+    expect(result.questions[0]).toMatchObject({ startBlock: 1, endBlock: 2 });
+    expect(result.answerBlocks.map((item) => item.index)).toEqual([3]);
+  });
+
+  test('does not treat a question sentence as an English section title', () => {
+    const result = segmentExam(examWith([
+      block(0, '一、解答题'),
+      block(1, '1. 请说明阅读理解题的解题步骤'),
+      block(2, '继续说明'),
+    ]));
+    expect(result.questions[0].endBlock).toBe(3);
+  });
 });

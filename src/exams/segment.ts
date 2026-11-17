@@ -8,6 +8,10 @@ interface SectionMatch {
 const SECTION_PATTERNS: Array<{ pattern: RegExp; type: SectionType }> = [
   { pattern: /^(?:单项|多项)?选择题(?:$|[\s（(:，,])/, type: 'choice' },
   { pattern: /^填空题(?:$|[\s（(:，,])/, type: 'fill' },
+  { pattern: /^(?:英语)?阅读理解(?:$|[\s（(:，,])/, type: 'reading' },
+  { pattern: /^Reading Comprehension(?:$|[\s（(:，,])/i, type: 'reading' },
+  { pattern: /^(?:英语)?(?:完形|完型)填空(?:$|[\s（(:，,])/, type: 'cloze' },
+  { pattern: /^(?:Cloze Test|完形阅读)(?:$|[\s（(:，,])/i, type: 'cloze' },
   { pattern: /^(?:解答题|计算题|证明题|综合题)(?:$|[\s（(:，,])/, type: 'solution' },
   { pattern: /^(?:判断题|实验题|作图题|连线题|阅读题)(?:$|[\s（(:，,])/, type: 'unsupported' },
 ];
@@ -62,9 +66,11 @@ function addReview(
 export function segmentExam(exam: ParsedExam): SegmentResult {
   const questions: QuestionDraft[] = [];
   const reviewItems: ReviewItem[] = [];
+  const answerBlocks: Block[] = [];
   let section: SectionMatch | undefined;
   let current: QuestionDraft | undefined;
   let unassignedStart: number | undefined;
+  let inAnswerSection = false;
 
   const closeCurrent = (endBlock: number) => {
     if (!current) return;
@@ -83,7 +89,13 @@ export function segmentExam(exam: ParsedExam): SegmentResult {
     if (isAnswerHeading(block)) {
       closeCurrent(block.index);
       closeUnassigned(block.index);
-      break;
+      inAnswerSection = true;
+      continue;
+    }
+
+    if (inAnswerSection) {
+      answerBlocks.push(block);
+      continue;
     }
 
     const nextSection = sectionMatch(block);
@@ -128,5 +140,5 @@ export function segmentExam(exam: ParsedExam): SegmentResult {
   closeCurrent(exam.blocks.length);
   closeUnassigned(exam.blocks.length);
   for (const issue of exam.issues) addReview(reviewItems, exam, 0, exam.blocks.length, issue);
-  return { questions, reviewItems };
+  return { questions, reviewItems, answerBlocks };
 }
