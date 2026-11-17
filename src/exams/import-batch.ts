@@ -1,4 +1,5 @@
 import { classifyQuestion } from './classify';
+import { groupEnglishQuestions } from './group-english';
 import type { BatchResult, ReviewItem, UploadLike } from './model';
 import { readDocx } from './read-docx';
 import { segmentExam } from './segment';
@@ -6,6 +7,7 @@ import { segmentExam } from './segment';
 export async function importBatch(files: Iterable<UploadLike>): Promise<BatchResult> {
   const exams: BatchResult['exams'] = [];
   const questions: BatchResult['questions'] = [];
+  const groups: BatchResult['groups'] = [];
   const reviewItems: ReviewItem[] = [];
   const fileErrors: BatchResult['fileErrors'] = [];
 
@@ -22,10 +24,11 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
       const exam = await readDocx(new Uint8Array(buffer), { id: sourceId, fileName: file.name });
       exams.push(exam);
       const segmented = segmentExam(exam);
+      const examQuestions: BatchResult['questions'] = [];
       reviewItems.push(...segmented.reviewItems);
       for (const draft of segmented.questions) {
         const classified = classifyQuestion(draft, exam.blocks.slice(draft.startBlock, draft.endBlock));
-        questions.push(classified);
+        examQuestions.push(classified);
         for (const issue of classified.issues) {
           reviewItems.push({
             id: `${classified.id}:issue:${reviewItems.length}`,
@@ -45,6 +48,9 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
           });
         }
       }
+      const grouped = groupEnglishQuestions(exam, examQuestions);
+      questions.push(...grouped.questions);
+      groups.push(...grouped.groups);
     } catch (error) {
       fileErrors.push({
         fileName: file.name,
@@ -56,7 +62,7 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
   return {
     exams,
     questions,
-    groups: [],
+    groups,
     answers: [],
     numberingByType: {},
     reviewItems,

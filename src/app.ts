@@ -28,6 +28,8 @@ const TYPE_LABELS: Record<QuestionType, string> = {
   choice: '选择题',
   fill: '填空题',
   solution: '解答题',
+  reading: '英语阅读理解',
+  cloze: '英语完形填空',
   unknown: '待定',
 };
 
@@ -120,7 +122,14 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
   };
 
   const counts = () => {
-    const byType: Record<QuestionType, number> = { choice: 0, fill: 0, solution: 0, unknown: 0 };
+    const byType: Record<QuestionType, number> = {
+      choice: 0,
+      fill: 0,
+      solution: 0,
+      reading: 0,
+      cloze: 0,
+      unknown: 0,
+    };
     for (const question of questions) byType[question.type] += 1;
     return byType;
   };

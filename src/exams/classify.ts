@@ -39,6 +39,8 @@ export function classifyQuestion(draft: QuestionDraft, blocks: Block[]): Classif
       choice: '检测到按序排列的 A—D 选项',
       fill: '检测到明确填答语句和空线',
       solution: '检测到求解要求和独立小问',
+      reading: '依据阅读理解栏目',
+      cloze: '依据完形填空栏目',
     };
     return { ...draft, type: signals[0], reason: labels[signals[0] as Exclude<QuestionType, 'unknown'>] };
   }

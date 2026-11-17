@@ -16,6 +16,8 @@ const LABELS: Record<Exclude<QuestionType, 'unknown'>, string> = {
   choice: '选择题汇总',
   fill: '填空题汇总',
   solution: '解答题汇总',
+  reading: '英语阅读理解汇总',
+  cloze: '英语完形填空汇总',
 };
 
 function extension(path: string): string {

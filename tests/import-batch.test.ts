@@ -27,4 +27,20 @@ describe('importBatch', () => {
     expect(result.questions.every((question) => question.originalNumber === '1')).toBe(true);
     expect(result.fileErrors).toEqual([{ fileName: '损坏.docx', message: expect.stringContaining('无法读取') }]);
   });
+
+  test('builds English passage groups for every imported document', async () => {
+    const reading = await createDocxFixture([
+      { text: '四、阅读理解' },
+      { text: 'Passage A' },
+      { text: 'An article about spring.' },
+      { text: '21. What season is it?' },
+      { text: 'A. Spring B. Summer C. Autumn D. Winter' },
+    ]);
+
+    const result = await importBatch([upload('阅读卷.docx', reading)]);
+
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toMatchObject({ type: 'reading', originalLabel: 'Passage A' });
+    expect(result.questions[0].groupId).toBe(result.groups[0].id);
+  });
 });
