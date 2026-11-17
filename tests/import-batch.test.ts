@@ -42,5 +42,7 @@ describe('importBatch', () => {
     expect(result.groups).toHaveLength(1);
     expect(result.groups[0]).toMatchObject({ type: 'reading', originalLabel: 'Passage A' });
     expect(result.questions[0].groupId).toBe(result.groups[0].id);
+    expect(result.questions[0].outputNumber).toBe(1);
+    expect(result.numberingByType.reading).toEqual([{ questionId: result.questions[0].id, value: 1 }]);
   });
 });

@@ -2,6 +2,7 @@ import { classifyQuestion } from './classify';
 import { groupEnglishQuestions } from './group-english';
 import type { BatchResult, ReviewItem, UploadLike } from './model';
 import { readDocx } from './read-docx';
+import { renumberAllTypes } from './renumber';
 import { segmentExam } from './segment';
 
 export async function importBatch(files: Iterable<UploadLike>): Promise<BatchResult> {
@@ -59,12 +60,13 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
     }
   }
 
+  const numbered = renumberAllTypes(questions);
   return {
     exams,
-    questions,
+    questions: numbered.questions,
     groups,
     answers: [],
-    numberingByType: {},
+    numberingByType: numbered.numberingByType,
     reviewItems,
     fileErrors,
   };
