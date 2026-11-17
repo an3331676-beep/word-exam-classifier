@@ -40,6 +40,9 @@ const result: BatchResult = {
     type: 'choice',
     reason: '依据栏目“一、选择题”',
   }],
+  groups: [],
+  answers: [],
+  numberingByType: {},
   reviewItems: [],
   fileErrors: [],
 };

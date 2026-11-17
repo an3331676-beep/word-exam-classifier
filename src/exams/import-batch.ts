@@ -53,5 +53,13 @@ export async function importBatch(files: Iterable<UploadLike>): Promise<BatchRes
     }
   }
 
-  return { exams, questions, reviewItems, fileErrors };
+  return {
+    exams,
+    questions,
+    groups: [],
+    answers: [],
+    numberingByType: {},
+    reviewItems,
+    fileErrors,
+  };
 }

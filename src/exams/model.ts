@@ -1,5 +1,11 @@
-export type QuestionType = 'choice' | 'fill' | 'solution' | 'unknown';
+export type QuestionType = 'choice' | 'fill' | 'solution' | 'reading' | 'cloze' | 'unknown';
+export type EnglishQuestionType = 'reading' | 'cloze';
+export type ExportQuestionType = Exclude<QuestionType, 'unknown' | 'solution'>;
 export type SectionType = Exclude<QuestionType, 'unknown'> | 'unsupported';
+
+export const isEnglishQuestionType = (
+  type: QuestionType,
+): type is EnglishQuestionType => type === 'reading' || type === 'cloze';
 
 export interface ExamSource {
   id: string;
@@ -53,6 +59,37 @@ export interface QuestionDraft {
 export interface ClassifiedQuestion extends QuestionDraft {
   type: QuestionType;
   reason: string;
+  groupId?: string;
+  outputNumber?: number;
+  answerId?: string;
+}
+
+export interface QuestionGroup {
+  id: string;
+  sourceId: string;
+  type: EnglishQuestionType;
+  originalLabel?: string;
+  materialStartBlock: number;
+  materialEndBlock: number;
+  questionIds: string[];
+  issues: string[];
+}
+
+export interface AnswerItem {
+  id: string;
+  sourceId: string;
+  originalNumber?: string;
+  text: string;
+  startBlock: number;
+  endBlock: number;
+  groupLabel?: string;
+  questionId?: string;
+  issues: string[];
+}
+
+export interface OutputNumber {
+  questionId: string;
+  value: number;
 }
 
 export interface ReviewItem {
@@ -66,6 +103,7 @@ export interface ReviewItem {
 export interface SegmentResult {
   questions: QuestionDraft[];
   reviewItems: ReviewItem[];
+  answerBlocks: Block[];
 }
 
 export interface FileError {
@@ -76,6 +114,9 @@ export interface FileError {
 export interface BatchResult {
   exams: ParsedExam[];
   questions: ClassifiedQuestion[];
+  groups: QuestionGroup[];
+  answers: AnswerItem[];
+  numberingByType: Partial<Record<ExportQuestionType, OutputNumber[]>>;
   reviewItems: ReviewItem[];
   fileErrors: FileError[];
 }
