@@ -634,18 +634,18 @@ const BRIDGE_CHANNEL = 'english-assistant-exam-bridge';
     }
   };
 
-  window.addEventListener('message', handleBridgeMessage);
+   window.addEventListener('message', handleBridgeMessage);
 
   render();
+
   return {
-  destroy() {
-    window.removeEventListener('message', handleBridgeMessage);
-    releaseObjectUrls();
-    root.replaceChildren();
-  },
-};
+    destroy() {
+      window.removeEventListener('message', handleBridgeMessage);
       releaseObjectUrls();
       root.replaceChildren();
+    },
+  };
+}
     },
   };
 }
