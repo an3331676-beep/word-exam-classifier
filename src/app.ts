@@ -638,11 +638,12 @@ const BRIDGE_CHANNEL = 'english-assistant-exam-bridge';
 
   render();
   return {
-    destroy(destroy() {
-      window.removeEventListener('message', handleBridgeMessage);
-      releaseObjectUrls();
-      root.replaceChildren();
-    },) {
+  destroy() {
+    window.removeEventListener('message', handleBridgeMessage);
+    releaseObjectUrls();
+    root.replaceChildren();
+  },
+};
       releaseObjectUrls();
       root.replaceChildren();
     },
