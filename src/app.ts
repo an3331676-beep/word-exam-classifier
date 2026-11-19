@@ -529,6 +529,112 @@ export function createExamApp(root: HTMLElement, overrides: Partial<AppServices>
     }
     render();
   };
+const BRIDGE_CHANNEL = 'english-assistant-exam-bridge';
+
+  const handleBridgeMessage = async (event: MessageEvent) => {
+    if (window.parent === window || event.source !== window.parent) return;
+    const message = event.data;
+    if (!message || message.channel !== BRIDGE_CHANNEL) return;
+
+    if (message.type === 'PING') {
+      window.parent.postMessage({ channel: BRIDGE_CHANNEL, type: 'READY' }, event.origin === 'null' ? '*' : event.origin);
+      return;
+    }
+    if (message.type !== 'PROCESS') return;
+
+    const requestId = typeof message.requestId === 'string' ? message.requestId : '';
+    const files = Array.isArray(message.files)
+      ? message.files.filter((file: unknown): file is UploadLike => {
+          if (!file || typeof file !== 'object') return false;
+          const candidate = file as Partial<UploadLike>;
+          return typeof candidate.name === 'string'
+            && candidate.name.toLowerCase().endsWith('.docx')
+            && typeof candidate.arrayBuffer === 'function';
+        })
+      : [];
+    const types = Array.isArray(message.questionTypes)
+      ? message.questionTypes.filter((type: unknown): type is ExportType =>
+          selectableTypes.some((item) => item.value === type),
+        )
+      : [];
+
+    const targetOrigin = event.origin === 'null' ? '*' : event.origin;
+    const respond = (payload: Record<string, unknown>) => {
+      window.parent.postMessage(
+        { channel: BRIDGE_CHANNEL, requestId, ...payload },
+        targetOrigin,
+      );
+    };
+
+    if (!requestId || files.length === 0 || types.length === 0) {
+      respond({ type: 'RESULT', success: false, error: '缺少有效的 Word 文件或题型。' });
+      return;
+    }
+
+    if (busy) {
+      respond({ type: 'RESULT', success: false, error: '试卷处理工具正在处理另一项任务，请稍后重试。' });
+      return;
+    }
+
+    busy = true;
+    status = `聊天助手正在提交 ${files.length} 份 Word 试卷…`;
+    exportMessage = '';
+    render();
+
+    try {
+      releaseObjectUrls();
+      result = await services.importDocuments(files);
+      questions = result.questions;
+
+      const outputs: Array<{
+        type: ExportType;
+        fileName: string;
+        blob: Blob;
+        questionCount: number;
+      }> = [];
+      const warnings: string[] = result.fileErrors.map((item) => `${item.fileName}: ${item.message}`);
+      if (result.reviewItems.length > 0) {
+        warnings.push(`另有 ${result.reviewItems.length} 处题目边界或识别线索需要核对。`);
+      }
+
+      for (const type of types) {
+        const exported = await services.exportCategory(
+          type,
+          questions,
+          result.exams,
+          result.groups,
+          result.answers,
+        );
+        const buffer = exported.bytes.buffer.slice(
+          exported.bytes.byteOffset,
+          exported.bytes.byteOffset + exported.bytes.byteLength,
+        ) as ArrayBuffer;
+        outputs.push({
+          type,
+          fileName: `${TYPE_LABELS[type]}汇总.docx`,
+          blob: new Blob([buffer], {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          }),
+          questionCount: exported.questionCount,
+        });
+        warnings.push(...exported.warnings);
+      }
+
+      status = `聊天助手已处理 ${files.length} 份试卷，导出 ${outputs.length} 份专项卷。`;
+      render();
+      respond({ type: 'RESULT', success: true, files: outputs, warnings });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '试卷处理失败';
+      status = message;
+      render();
+      respond({ type: 'RESULT', success: false, error: message });
+    } finally {
+      busy = false;
+      render();
+    }
+  };
+
+  window.addEventListener('message', handleBridgeMessage);
 
   render();
   return {
